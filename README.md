@@ -1,0 +1,2 @@
+# federpendel
+Simulation gedämpfte Schwingung
