@@ -1,0 +1,397 @@
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gedämpfte Schwingungen – Physik Klasse 11</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:Arial,sans-serif;background:#f1f5f9;color:#172033;margin:0;padding:16px}
+main{max-width:850px;margin:auto}
+h1{font-size:25px}
+h2{font-size:18px;margin:5px 0 14px}
+.card{background:white;padding:17px;border-radius:13px;margin:13px 0;box-shadow:0 2px 8px #0000000c}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+button{border:1px solid #cbd5e1;border-radius:9px;padding:12px;background:white;font-size:15px;cursor:pointer}
+button.selected{background:#1675c5;color:white;border-color:#1675c5}
+input[type=range]{width:100%;accent-color:#1675c5;margin:14px 0}
+canvas{display:block;width:100%;background:#f8fafc;border-radius:8px;touch-action:none}
+.value{font-size:21px;font-weight:bold;color:#1675c5}
+.small{font-size:13px;color:#64748b}
+.info{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.info div{background:#f1f5f9;padding:12px;border-radius:8px}
+.simulation-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px;align-items:start}
+.simulation-grid .card{margin:13px 0}
+.controls{display:flex;gap:8px}
+.controls button{flex:1}
+#start{background:#1675c5;color:white}
+#status{text-align:center;color:#64748b;font-size:13px;margin-top:10px}
+@media(max-width:700px){
+ .simulation-grid{grid-template-columns:1fr}
+}
+@media(max-width:480px){
+ body{padding:9px}
+ .card{padding:12px}
+ h1{font-size:21px}
+ button{padding:10px 4px;font-size:13px}
+}
+</style>
+</head>
+<body>
+<main>
+<h1>Gedämpfte Schwingungen</h1>
+<p>Physik · Jahrgangsstufe 11 · Gymnasium Bayern</p>
+
+<section class="card">
+<h2>1. Masse auswählen</h2>
+<div class="grid" id="masses">
+<button data-m="0.2">0,2 kg</button>
+<button data-m="0.5" class="selected">0,5 kg</button>
+<button data-m="1">1,0 kg</button>
+<button data-m="1.5">1,5 kg</button>
+</div>
+</section>
+
+<section class="card">
+<h2>2. Dämpfungskoeffizient einstellen</h2>
+<div class="value" id="bvalue">0,00 Ns/m</div>
+<input id="damping" type="range" min="0" max="13" step="0.01" value="0">
+<div class="small">0 Ns/m – keine Dämpfung · 13 Ns/m – starke Dämpfung</div>
+<div class="info" style="margin-top:12px">
+<div><div class="small">Kritische Dämpfung</div><strong id="critical">6,32 Ns/m</strong></div>
+<div><div class="small">Schwingungsfall</div><strong id="regime">Ungedämpft</strong></div>
+</div>
+</section>
+
+<div class="simulation-grid">
+<section class="card">
+<h2>3. Startauslenkung einstellen</h2>
+<canvas id="spring" height="285"></canvas>
+<p class="small" style="text-align:center">Ziehe die Masse mit dem Finger oder der Maus nach oben oder unten.</p>
+<div class="info">
+<div><div class="small">Startauslenkung</div><strong id="amplitude">12,0 cm</strong></div>
+<div><div class="small">Federkonstante</div><strong>20 N/m</strong></div>
+</div>
+</section>
+
+<section class="card">
+<h2>4. Auslenkung-Zeit-Diagramm</h2>
+<div class="small" id="time">t = 0,00 s</div>
+<canvas id="graph" height="270"></canvas>
+<div class="small" style="display:flex;justify-content:space-between">
+<span>0 s</span><span>10 s</span><span>20 s</span>
+</div>
+</section>
+</div>
+
+<section class="card">
+<div class="controls">
+<button id="start">▶ Start</button>
+<button id="pause">Ⅱ Pause</button>
+<button id="reset">↺ Reset</button>
+</div>
+<div id="status">Bereit für den Versuch</div>
+</section>
+
+<section class="card">
+<h2>Momentane Messwerte</h2>
+<div class="info">
+<div><div class="small">Auslenkung</div><strong id="position">12,00 cm</strong></div>
+<div><div class="small">Amplitude / Hüllkurve</div><strong id="envelope">12,00 cm</strong></div>
+</div>
+</section>
+
+<p class="small">Modell: Feder-Masse-System mit linearer viskoser Dämpfung. Die Bewegung wird analytisch berechnet.</p>
+</main>
+
+<script>
+(()=>{
+const $=id=>document.getElementById(id);
+const K=20;
+let mass=.5,b=0,A=.12,t=0;
+let running=false,dragging=false,raf=0,last=0;
+let history=[];
+
+const fmt=(v,n=2)=>v.toFixed(n).replace(".",",");
+
+function critical(){
+ return 2*Math.sqrt(K*mass);
+}
+
+function regime(){
+ const bc=critical();
+ if(b===0)return "Ungedämpft";
+ if(Math.abs(b-bc)<.005)return "Grenzfall";
+ return b<bc?"Schwingfall":"Kriechfall";
+}
+
+// Analytische Lösung der Bewegungsgleichung
+// Anfangsbedingungen: x(0)=A, v(0)=0
+function displacement(time){
+ const omega0=Math.sqrt(K/mass);
+ const delta=b/(2*mass);
+ const disc=omega0*omega0-delta*delta;
+
+ if(Math.abs(disc)<1e-10){
+   return A*(1+omega0*time)*Math.exp(-omega0*time);
+ }
+
+ if(disc>0){
+   const omega=Math.sqrt(disc);
+   return A*Math.exp(-delta*time)*
+    (Math.cos(omega*time)+(delta/omega)*Math.sin(omega*time));
+ }
+
+ const q=Math.sqrt(-disc);
+ const r1=-delta+q;
+ const r2=-delta-q;
+ const c1=A*(-r2)/(r1-r2);
+ const c2=A*r1/(r1-r2);
+
+ return c1*Math.exp(r1*time)+c2*Math.exp(r2*time);
+}
+
+function envelope(time){
+ const delta=b/(2*mass);
+ const omega0=Math.sqrt(K/mass);
+ const disc=omega0*omega0-delta*delta;
+
+ if(disc>1e-10)return Math.abs(A)*Math.exp(-delta*time);
+
+ if(Math.abs(disc)<=1e-10)
+  return Math.abs(A)*(1+omega0*time)*Math.exp(-omega0*time);
+
+ const q=Math.sqrt(-disc);
+ const r1=-delta+q,r2=-delta-q;
+ const c1=A*(-r2)/(r1-r2);
+ const c2=A*r1/(r1-r2);
+ return Math.abs(c1*Math.exp(r1*time))+Math.abs(c2*Math.exp(r2*time));
+}
+
+function resize(canvas,ctx,height){
+ const w=canvas.clientWidth||320;
+ const d=window.devicePixelRatio||1;
+ canvas.width=w*d;
+ canvas.height=height*d;
+ ctx.setTransform(d,0,0,d,0,0);
+ return w;
+}
+
+function drawSpring(){
+ const canvas=$("spring"),ctx=canvas.getContext("2d");
+ const w=resize(canvas,ctx,285);
+ const cx=w/2,rest=143;
+ const x=running||t>0?displacement(t):A;
+ const y=rest-x*350;
+
+ ctx.clearRect(0,0,w,285);
+ ctx.fillStyle="#64748b";
+ ctx.fillRect(cx-75,13,150,10);
+
+ ctx.strokeStyle="#299bd9";
+ ctx.lineWidth=3;
+ ctx.beginPath();
+ ctx.moveTo(cx,23);
+ const end=y-13,step=(end-23)/32;
+ for(let i=0;i<32;i++)
+  ctx.lineTo(cx+(i%2?13:-13),23+(i+1)*step);
+ ctx.lineTo(cx,end);
+ ctx.stroke();
+
+ ctx.setLineDash([5,5]);
+ ctx.strokeStyle="#94a3b8";
+ ctx.lineWidth=1;
+ ctx.beginPath();
+ ctx.moveTo(15,rest);
+ ctx.lineTo(w-15,rest);
+ ctx.stroke();
+ ctx.setLineDash([]);
+
+ ctx.fillStyle="#d58a42";
+ ctx.fillRect(cx-35,y-13,70,26);
+ ctx.strokeStyle="#9a652f";
+ ctx.strokeRect(cx-35,y-13,70,26);
+
+ ctx.fillStyle="#fff";
+ ctx.font="12px Arial";
+ ctx.textAlign="center";
+ ctx.fillText(fmt(mass,1)+" kg",cx,y+4);
+
+ ctx.fillStyle="#64748b";
+ ctx.textAlign="left";
+ ctx.fillText("Ruhelage",8,rest-7);
+}
+
+function drawGraph(){
+ const canvas=$("graph"),ctx=canvas.getContext("2d");
+ const w=resize(canvas,ctx,270);
+ const left=48,right=w-12;
+ const mid=119,scale=330;
+
+ ctx.clearRect(0,0,w,270);
+ ctx.font="11px Arial";
+ ctx.textAlign="right";
+
+ for(let j=-2;j<=2;j++){
+  const yy=mid-j*.15*scale;
+  ctx.strokeStyle=j===0?"#94a3b8":"#e2e8f0";
+  ctx.beginPath();
+  ctx.moveTo(left,yy);
+  ctx.lineTo(right,yy);
+  ctx.stroke();
+  ctx.fillStyle="#64748b";
+  ctx.fillText(fmt(j*.15,2),left-5,yy+4);
+ }
+
+ ctx.textAlign="center";
+ for(let j=0;j<=20;j+=2){
+  const xx=left+(right-left)*j/20;
+  ctx.fillStyle="#64748b";
+  ctx.fillText(j,xx,258);
+ }
+
+ ctx.strokeStyle="#1675c5";
+ ctx.lineWidth=2.5;
+ ctx.beginPath();
+
+ history.forEach((pt,i)=>{
+  const xx=left+(right-left)*pt.t/20;
+  const yy=mid-pt.x*scale;
+  if(i===0)ctx.moveTo(xx,yy);
+  else ctx.lineTo(xx,yy);
+ });
+ ctx.stroke();
+}
+
+function update(){
+ $("bvalue").textContent=fmt(b)+" Ns/m";
+ $("critical").textContent=fmt(critical())+" Ns/m";
+ $("regime").textContent=regime();
+ $("amplitude").textContent=fmt(A*100,1)+" cm";
+
+ const x=displacement(t);
+ $("time").textContent="t = "+fmt(t)+" s";
+ $("position").textContent=fmt(x*100)+" cm";
+ $("envelope").textContent=fmt(envelope(t)*100)+" cm";
+
+ document.querySelectorAll("[data-m]").forEach(btn=>{
+  btn.classList.toggle("selected",Number(btn.dataset.m)===mass);
+ });
+}
+
+function draw(){
+ drawSpring();
+ drawGraph();
+ update();
+}
+
+function reset(){
+ t=0;
+ history=[{t:0,x:A}];
+ draw();
+}
+
+function stop(){
+ running=false;
+ last=0;
+ if(raf){
+  cancelAnimationFrame(raf);
+  raf=0;
+ }
+}
+
+function frame(now){
+ if(!running){raf=0;return;}
+ if(!last)last=now;
+ t=Math.min(20,t+(now-last)/1000);
+ last=now;
+
+ // Exakte analytische Auswertung für jeden Animationszeitpunkt
+ history.push({t,x:displacement(t)});
+ draw();
+
+ if(t>=20){
+  stop();
+  $("status").textContent="Messung abgeschlossen.";
+  return;
+ }
+ raf=requestAnimationFrame(frame);
+}
+
+function start(){
+ if(running)return;
+ if(t>=20)reset();
+ running=true;
+ last=0;
+ $("status").textContent="Schwingung läuft – Graph wird aufgezeichnet.";
+ raf=requestAnimationFrame(frame);
+}
+
+$("start").addEventListener("click",start);
+$("pause").addEventListener("click",()=>{
+ stop();
+ $("status").textContent="Pausiert.";
+});
+$("reset").addEventListener("click",()=>{
+ stop();
+ reset();
+ $("status").textContent="Zurückgesetzt.";
+});
+
+document.querySelectorAll("[data-m]").forEach(btn=>{
+ btn.addEventListener("click",()=>{
+  stop();
+  mass=Number(btn.dataset.m);
+  reset();
+  $("status").textContent="Masse ausgewählt.";
+ });
+});
+
+$("damping").addEventListener("input",e=>{
+ stop();
+ b=Number(e.target.value);
+ reset();
+ $("status").textContent="Dämpfung eingestellt.";
+});
+
+// Touch- und Maussteuerung
+function pointerY(e){
+ const r=$("spring").getBoundingClientRect();
+ return (e.clientY-r.top)*285/r.height;
+}
+
+$("spring").addEventListener("pointerdown",e=>{
+ if(running)return;
+ const canvas=$("spring");
+ const r=canvas.getBoundingClientRect();
+ const px=(e.clientX-r.left)*canvas.clientWidth/r.width;
+ const py=pointerY(e);
+ const cy=143-A*350;
+
+ if(Math.abs(px-canvas.clientWidth/2)<65&&Math.abs(py-cy)<38){
+  dragging=true;
+  canvas.setPointerCapture(e.pointerId);
+  e.preventDefault();
+ }
+});
+
+$("spring").addEventListener("pointermove",e=>{
+ if(!dragging)return;
+ A=Math.max(-.27,Math.min(.27,(143-pointerY(e))/350));
+ t=0;
+ history=[{t:0,x:A}];
+ draw();
+ e.preventDefault();
+});
+
+$("spring").addEventListener("pointerup",()=>dragging=false);
+$("spring").addEventListener("pointercancel",()=>dragging=false);
+
+window.addEventListener("resize",draw);
+
+reset();
+})();
+</script>
+</body>
+</html>
